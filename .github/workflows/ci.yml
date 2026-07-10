@@ -1,10 +1,11 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main ci-test]
   pull_request:
-    branches: [main]
+    branches: [main ci-test]
 
 permissions:
   contents: read
@@ -15,7 +16,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     strategy:
       fail-fast: false
@@ -47,14 +48,10 @@ jobs:
             build-essential \
             ninja-build \
             pkg-config \
-            wayland-protocols \
             libwayland-dev \
-            libxkbcommon-dev \
             libinput-dev \
             libdbus-1-dev \
-            libdrm-dev \
             libgbm-dev \
-            libpixman-1-dev \
             libudev-dev \
             libseat-dev \
             libxcb1-dev \
@@ -86,7 +83,9 @@ jobs:
             foot \
             xterm \
             xwayland \
-            zsh
+            zsh \
+            bc \
+            wget
 
       - name: Upgrade meson
         run: pip install --upgrade --break-system-packages meson
@@ -96,34 +95,52 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/deps-install
-          key: deps-wayland-pixman-wlroots-v2-${{ runner.os }}
+          key: deps-wayland-pixman-xkbcommon-wlroots-v3-${{ runner.os }}
 
-      - name: Build wayland, pixman, and wayland-protocols
+      - name: Build wayland, pixman, libdrm, xkbcommon, and wayland-protocols
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/deps-install
 
-          # Build wayland 1.23.1
+          # Build wayland 1.24.0
           cd ~
-          git clone --depth 1 --branch 1.23.1 https://gitlab.freedesktop.org/wayland/wayland.git
+          git clone --depth 1 --branch 1.24.0 https://gitlab.freedesktop.org/wayland/wayland.git
           cd wayland
           meson setup build --prefix=$HOME/deps-install -Ddocumentation=false -Dtests=false
           ninja -C build
           ninja -C build install
 
-          # Build pixman 0.44.2
+          # Build pixman 0.46.0
           cd ~
-          git clone --depth 1 --branch pixman-0.44.2 https://gitlab.freedesktop.org/pixman/pixman.git
+          git clone --depth 1 --branch pixman-0.46.0 https://gitlab.freedesktop.org/pixman/pixman.git
           cd pixman
           meson setup build --prefix=$HOME/deps-install -Dtests=disabled -Ddemos=disabled
           ninja -C build
           ninja -C build install
 
-          # Build wayland-protocols 1.41
+          # Build libdrm
+          wget https://dri.freedesktop.org/libdrm/libdrm-2.4.134.tar.xz
+          tar -xf libdrm-2.4.134.tar.xz
+          cd libdrm-2.4.134
+          meson setup build/ --prefix=$HOME/deps-install --buildtype=release  -D valgrind=disabled  -Dtests=false
+          cd build/
+          ninja install
+
+
+          # Build wayland-protocols 1.47
           cd ~
-          git clone --depth 1 --branch 1.41 https://gitlab.freedesktop.org/wayland/wayland-protocols.git
+          git clone --depth 1 --branch 1.47 https://gitlab.freedesktop.org/wayland/wayland-protocols.git
           cd wayland-protocols
           meson setup build --prefix=$HOME/deps-install -Dtests=false
+          ninja -C build
+          ninja -C build install
+
+          # Build xkbcommon 1.8.0
+          cd ~
+          wget https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-1.8.0.tar.gz
+          tar -xf xkbcommon-1.8.0.tar.gz
+          cd libxkbcommon-xkbcommon-1.8.0
+          meson setup build --prefix=$HOME/deps-install -Denable-docs=false -Denable-wayland=false -Denable-x11=false
           ninja -C build
           ninja -C build install
 
@@ -132,7 +149,7 @@ jobs:
         run: |
           export PKG_CONFIG_PATH=$HOME/deps-install/share/pkgconfig:$HOME/deps-install/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
           cd ~
-          git clone --depth 1 --branch 0.19.3 https://gitlab.freedesktop.org/wlroots/wlroots.git
+          git clone --depth 1 --branch 0.20.0 https://gitlab.freedesktop.org/wlroots/wlroots.git
           cd wlroots
           meson setup build --prefix=$HOME/deps-install -Dexamples=false -Dxwayland=enabled
           ninja -C build
